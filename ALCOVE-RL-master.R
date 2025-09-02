@@ -1,0 +1,119 @@
+ALCOVE_RL = function(intl_par, tr_data, h, w, alpha,q, r, exp_info){
+  source("fn_AlCOVE_RL.r")
+  c = intl_par[1]
+  phi = intl_par[2]
+  lw = intl_par[3]
+  la = intl_par[4]
+  
+  d_num = exp_info[1] 
+  k_num = exp_info[2]
+  stim_num = exp_info[3]
+  t_type = exp_info[4]
+ 
+  
+  trial_num = dim(tr_data)[1]
+  pr_store = matrix(NA, trial_num, 2) # store the estimated categorization probabilities for the current trial
+  alpha_store = matrix(NA, trial_num, d_num)
+  e_store = matrix(NA, trial_num, k_num)
+  w_store = matrix(NA, trial_num, (k_num*stim_num))
+  
+  for(n in 1: trial_num){
+    trial = tr_data[n, ]
+    a_in = as.numeric(trial[1:d_num]) #dim imput
+    fb = as.numeric(trial[(d_num+1):(d_num+k_num)]) #teacher/feedback
+    ctr = as.numeric(trial[(d_num+k_num+1)])
+    
+    if (ctr == 0){
+      alpha_store[n,] = alpha
+      w_store[n, ] = as.numeric(t(w))
+      trial_fit = ALCOV_trial(c, phi, lw, la, alpha, w, h,q, r, a_in,fb, t_type)
+      w = trial_fit$w
+      alpha = trial_fit$alpha
+      pr_store[n, 1:2] = trial_fit$pr
+      e_store[n,] = trial_fit$e
+    } else if (ctr == 2){
+      alpha_store[n,] = alpha
+      w_store[n, ] = as.numeric(t(w))
+      trial_fit = ALCOV_trial(c, phi, lw=0, la=0, alpha, w, h,q, r, a_in,fb, t_type)
+      pr_store[n, 1:2] = trial_fit$pr
+      e_store[n,] = trial_fit$e
+    } 
+  }
+
+  store = list()
+  store$pr = pr_store      # Prediction probabilities
+  store$w = w              # Final association weights
+  store$a = alpha_store    # Attention weight history
+  store$e = e_store        # Error history
+  store$w_list = w_store   # Association weight history
+  
+  return(store)
+}
+
+
+
+ALCOVE_nlk = function(int_pars, data, h, w, alpha, q, r, exp_info, upperbound){
+  d_num = exp_info[1] 
+  k_num = exp_info[2]
+  stim_num = exp_info[3]
+  t_type = exp_info[4]
+  
+  tr_data = data[, 1:(d_num+k_num+1)]
+  rep = data$rep
+  new_param = rep(NA, length(int_pars))
+  for(i in 1:length(int_pars)){
+    new_param[i] = upperbound[i]/(1+exp(-int_pars[i]))
+  }
+  m_fit = ALCOVE_RL(new_param, tr_data, h, w, alpha, q = 1, r = 2, exp_info) 
+  prob = m_fit$pr
+  log_prob = log(prob)
+  llk = 0
+  nlk = 0 
+  for(i in 1:length(rep)){
+    llk = llk + log_prob[i, rep[i]]
+    nlk = nlk - log_prob[i, rep[i]]
+  }
+  return(nlk) #to be minimized
+}
+
+transform_output = function(output_param, upperbound){
+  new_param = rep(NA, length(output_param))
+  for(i in 1:length(output_param)){
+    new_param[i] = upperbound[i]/(1+exp(-output_param[i]))
+  }
+  return(new_param)
+}
+
+
+
+
+ALCOVE_nlk_DEoptim = function(int_pars, data, h, w, alpha, q, r, exp_info){
+  d_num = exp_info[1] 
+  k_num = exp_info[2]
+  stim_num = exp_info[3]
+  t_type = exp_info[4]
+  
+  col_n = d_num+k_num+1
+  tr_data = data[, 1:col_n]
+  rep = data$rep
+  new_param = int_pars
+  
+  m_fit = ALCOVE_RL(new_param, tr_data, h, w, alpha, q = 1, r = 2, exp_info) 
+  prob = m_fit$pr
+  prob[which(prob==0, arr.ind = T)] = 10^-10
+  log_prob = log(prob)
+  llk = 0
+  nlk = 0 
+  for(i in 1:length(rep)){
+    llk = llk + log_prob[i, rep[i]]
+    nlk = nlk - log_prob[i, rep[i]]
+  }
+  
+  return(nlk) #to be minimized
+}
+
+
+
+
+
+
